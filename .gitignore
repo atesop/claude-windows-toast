@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+
+# 构建产物（测试分发包）
+dist/
