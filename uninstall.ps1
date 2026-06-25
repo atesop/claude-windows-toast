@@ -10,6 +10,9 @@
 #   4. 精确移除 settings.json 中的相关 hooks（保留用户其他 hooks）
 
 param(
+    # 目标环境：留空（默认）= WSL 与 Windows 两边都清（最彻底）；
+    # Wsl = 只清 WSL 侧；Windows = 只清 Windows 原生侧。与 install 的 -Target 对称。
+    [ValidateSet("Wsl","Windows","")][string]$Target = "",
     [string]$WslDistro = ""
 )
 
@@ -66,28 +69,30 @@ if (-not $deletedAny) { Write-Warn "无本项目部署文件，跳过" }
 
 Write-Info "移除 Hook 脚本..."
 
-# 尝试 WSL 和 Windows 路径
-$hookPaths = @()
-
-# WSL 路径（必须用 wslpath 转 UNC，否则 Windows PowerShell 把 /home/.. 当 C:\home\..）
+# 按 -Target 决定清理范围：留空则 WSL+Windows 都清（彻底），Wsl 只清 WSL，Windows 只清 Windows。
+# $wslHome/$winHome 为 $null 表示跳过该侧。
 $wslHome = $null
-try {
-    if ($WslDistro) {
-        $unc = wsl.exe -d $WslDistro -e sh -lc 'wslpath -w "$HOME"' 2>$null
-    } else {
-        $unc = wsl.exe -e sh -lc 'wslpath -w "$HOME"' 2>$null
-    }
-    if ($LASTEXITCODE -eq 0 -and $unc) { $wslHome = $unc.Trim() }
-} catch {}
-if ($wslHome) {
-    $hookPaths += Join-Path $wslHome '.claude\hooks\claude-windows-toast.cjs'
+$winHome = $null
+
+if ($Target -ne 'Windows') {
+    # WSL 路径（必须用 wslpath 转 UNC，否则 Windows PowerShell 把 /home/.. 当 C:\home\..）
+    try {
+        if ($WslDistro) {
+            $unc = wsl.exe -d $WslDistro -e sh -lc 'wslpath -w "$HOME"' 2>$null
+        } else {
+            $unc = wsl.exe -e sh -lc 'wslpath -w "$HOME"' 2>$null
+        }
+        if ($LASTEXITCODE -eq 0 -and $unc) { $wslHome = $unc.Trim() }
+    } catch {}
 }
 
-# Windows 路径
-$winHome = $env:USERPROFILE
-if ($winHome) {
-    $hookPaths += Join-Path $winHome '.claude\hooks\claude-windows-toast.cjs'
+if ($Target -ne 'Wsl') {
+    $winHome = $env:USERPROFILE
 }
+
+$hookPaths = @()
+if ($wslHome) { $hookPaths += Join-Path $wslHome '.claude\hooks\claude-windows-toast.cjs' }
+if ($winHome) { $hookPaths += Join-Path $winHome '.claude\hooks\claude-windows-toast.cjs' }
 
 foreach ($hookFile in $hookPaths) {
     if (Test-Path $hookFile) {
@@ -133,34 +138,44 @@ foreach ($settingsFile in $settingsPaths) {
         $eventName = $evt.Name
         $entries = @($evt.Value)
 
-        # 逐条过滤每个 matcher entry
         $newEntries = @()
+        $eventChanged = $false
         foreach ($entry in $entries) {
             $hooks = @($entry.hooks)
 
-            # 过滤掉包含本脚本的 hook command
-            $remainingHooks = @($hooks | Where-Object {
-                $_.command -notmatch $scriptMarker
-            })
+            # 过滤掉本项目的 hook：旧 shell form 的 command 含 marker；
+            # 新 exec form 的 command 是 'node' 但 marker 在 args[0]，两者都要识别。
+            # 显式 foreach，与 install.ps1 的 Remove-ProjectHooks 保持一致。
+            $remainingHooks = @()
+            foreach ($h in $hooks) {
+                $isOurs = "$($h.command)" -match $scriptMarker
+                if (-not $isOurs -and $h.args) {
+                    foreach ($a in $h.args) { if ("$a" -match $scriptMarker) { $isOurs = $true; break } }
+                }
+                if (-not $isOurs) { $remainingHooks += $h }
+            }
 
-            if ($remainingHooks.Count -gt 0) {
-                # 还有其他 hook，保留这个 entry（用过滤后的 hooks）
-                $newEntry = $entry.PSObject.Copy()
-                $newEntry.hooks = $remainingHooks
-                $newEntries += $newEntry
-                # 仅当确实过滤掉本项目 hook 时才标记修改，避免无谓重写 settings/.bak
-                if ($remainingHooks.Count -ne $hooks.Count) { $modified = $true }
+            if ($remainingHooks.Count -eq 0) {
+                # 本项目 hook 占满整个 entry：丢弃 entry
+                $eventChanged = $true
+            } elseif ($remainingHooks.Count -lt $hooks.Count) {
+                # 过滤掉部分：用过滤后的 hooks 重建 entry（直接构造，避免 Copy 浅拷贝引用陷阱）
+                $newEntries += [PSCustomObject]@{ matcher = $entry.matcher; hooks = $remainingHooks }
+                $eventChanged = $true
             } else {
-                # 所有 hooks 都被移除了，丢弃这个 entry
-                $modified = $true
+                # 未触及本项目：原样保留 entry
+                $newEntries += $entry
             }
         }
 
-        # 更新事件
+        # 写回事件：entry 全丢则移除事件节点；有变化则覆盖（用 $eventChanged 判断，
+        # 而非 entry 数量比较——后者会漏掉"entry 数量不变但内部 hooks 变化"的情况）
         if ($newEntries.Count -eq 0) {
             $settings.hooks.PSObject.Properties.Remove($eventName)
-        } elseif ($newEntries.Count -ne $entries.Count) {
+            $modified = $true
+        } elseif ($eventChanged) {
             $settings.hooks.$eventName = $newEntries
+            $modified = $true
         }
     }
 

@@ -65,6 +65,12 @@ const ASK_EXPIRY_MS = 60000; // 60 秒内检测为"最近 ask"
 const REGISTRY_CHECK_TTL_MS = 24 * 60 * 60 * 1000; // 24 小时
 const DEBUG = process.env.CLAUDE_WINDOWS_TOAST_DEBUG === '1';
 
+// ---- 平台适配 ----
+// 区分两种运行环境（Claude Code 未提供专用环境变量，靠 process.platform 判定）：
+//   · 'linux' → Claude Code 跑在 WSL，本进程是 Linux Node，访问 Windows 文件需经 /mnt/c
+//   · 'win32' → Claude Code 跑在 Windows 原生，本进程是 Windows Node，直接用 C:\ 路径
+const IS_NATIVE_WINDOWS = process.platform === 'win32';
+
 // ---- 调试日志 ----
 
 function debugLog(msg) {
@@ -132,10 +138,26 @@ function getCwdName() {
 // ---- 协议注册 ----
 
 /**
- * 获取 Windows APPDATA 路径（WSL 兼容）
- * @returns {{ win: string, wsl: string } | null}
+ * 获取 Windows APPDATA 路径（WSL 与 Windows 原生双环境）
+ *
+ * 返回 { win, fsBase }：
+ *   - win:    Windows 风格路径（C:\Users\...\Roaming），始终用于注册表与 VBS 内容
+ *   - fsBase: 本进程 fs 操作用的基础路径
+ *             · WSL：/mnt/c/Users/.../Roaming（Node 在 Linux，经 /mnt/c 访问 Windows 文件）
+ *             · Windows 原生：C:\Users\...\Roaming（Node 本就在 Windows，原样使用）
+ *
+ * Windows 原生下直接读 process.env.APPDATA，免去一次 spawn powershell（更快）；
+ * WSL 下 Node 没有 APPDATA 环境变量，仍需 spawn powershell.exe 获取。
+ *
+ * @returns {{ win: string, fsBase: string } | null}
  */
 function getWindowsAppData() {
+  if (IS_NATIVE_WINDOWS) {
+    const win = (process.env.APPDATA || '').trim();
+    if (!win || !win.match(/^[A-Z]:\\/i)) return null;
+    return { win, fsBase: win };
+  }
+
   const result = spawnSync('powershell.exe', [
     '-ExecutionPolicy', 'Bypass', '-NoProfile', '-WindowStyle', 'Hidden',
     '-Command', 'Write-Output $env:APPDATA'
@@ -146,10 +168,7 @@ function getWindowsAppData() {
 
   const drive = win[0].toLowerCase();
   const relPath = win.substring(3).replace(/\\/g, '/');
-  return {
-    win: win,
-    wsl: `/mnt/${drive}/${relPath}`
-  };
+  return { win, fsBase: `/mnt/${drive}/${relPath}` };
 }
 
 /**
@@ -235,9 +254,12 @@ function validateProtocolSetup(marker) {
   if (!marker || !marker.ok) return false;
 
   // 1. 每次都检查部署文件是否存在（廉价，无进程启动）
+  //    fsPs1Path/fsVbsPath 是本进程可用的 fs 路径（WSL=/mnt/c...，原生=C:\...）。
+  //    字段缺失说明是旧版 marker（wslPs1Path 时代），强制重注册刷新到新结构。
   try {
-    if (marker.wslPs1Path && !fs.existsSync(marker.wslPs1Path)) return false;
-    if (marker.wslVbsPath && !fs.existsSync(marker.wslVbsPath)) return false;
+    if (!marker.fsPs1Path || !marker.fsVbsPath) return false;
+    if (!fs.existsSync(marker.fsPs1Path)) return false;
+    if (!fs.existsSync(marker.fsVbsPath)) return false;
   } catch {
     return false;
   }
@@ -304,17 +326,18 @@ function ensureProtocolSetup() {
     return false;
   }
 
-  const dirWsl = path.join(appData.wsl, DEPLOY_DIR_NAME);
-  const ps1Wsl = path.join(dirWsl, 'activate-wt.ps1');
+  // fsBase: 本进程 fs 用（WSL=/mnt/c...，原生=C:\...）；win: 注册表/VBS 内容用（始终 Windows 路径）
+  const dirFs = path.join(appData.fsBase, DEPLOY_DIR_NAME);
+  const ps1Fs = path.join(dirFs, 'activate-wt.ps1');
+  const vbsFs = path.join(dirFs, 'activate-wt.vbs');
   const ps1Win = `${appData.win}\\${DEPLOY_DIR_NAME}\\activate-wt.ps1`;
-  const vbsWsl = path.join(dirWsl, 'activate-wt.vbs');
   const vbsWin = `${appData.win}\\${DEPLOY_DIR_NAME}\\activate-wt.vbs`;
 
   // 3. 部署激活脚本
   try {
-    fs.mkdirSync(dirWsl, { recursive: true });
-    fs.writeFileSync(ps1Wsl, getActivationScriptContent(), 'utf8');
-    debugLog(`Deployed PS1: ${ps1Wsl}`);
+    fs.mkdirSync(dirFs, { recursive: true });
+    fs.writeFileSync(ps1Fs, getActivationScriptContent(), 'utf8');
+    debugLog(`Deployed PS1: ${ps1Fs}`);
   } catch (e) {
     debugLog(`Failed to deploy PS1: ${e.message}`);
     return false;
@@ -322,15 +345,17 @@ function ensureProtocolSetup() {
 
   // 4. 生成 VBS 包装器
   try {
-    fs.writeFileSync(vbsWsl, getVbsWrapperContent(ps1Win), 'utf8');
-    debugLog(`Deployed VBS: ${vbsWsl}`);
+    fs.writeFileSync(vbsFs, getVbsWrapperContent(ps1Win), 'utf8');
+    debugLog(`Deployed VBS: ${vbsFs}`);
   } catch (e) {
     debugLog(`Failed to deploy VBS: ${e.message}`);
     return false;
   }
 
   // 5. 注册协议（使用临时 PS1 文件避免转义问题）
-  const regScriptWsl = path.join(dirWsl, 'register-protocol.ps1');
+  //    regScriptFs 在 WSL 下是 /mnt/c/...（WSL 互操作会自动转成 C:\ 传给 powershell.exe）；
+  //    Windows 原生下就是 C:\...，直接执行。两种平台统一 -File regScriptFs 即可。
+  const regScriptFs = path.join(dirFs, 'register-protocol.ps1');
   const regScriptContent = [
     "$k = 'HKCU:\\Software\\Classes\\" + PROTOCOL_NAME + "'",
     "if (-not (Test-Path $k)) {",
@@ -345,7 +370,7 @@ function ensureProtocolSetup() {
   ].join('\n');
 
   try {
-    fs.writeFileSync(regScriptWsl, regScriptContent, 'utf8');
+    fs.writeFileSync(regScriptFs, regScriptContent, 'utf8');
   } catch (e) {
     debugLog(`Failed to write reg script: ${e.message}`);
     return false;
@@ -353,7 +378,7 @@ function ensureProtocolSetup() {
 
   const regResult = spawnSync('powershell.exe', [
     '-ExecutionPolicy', 'Bypass', '-NoProfile', '-WindowStyle', 'Hidden',
-    '-File', regScriptWsl
+    '-File', regScriptFs
   ], { windowsHide: true, encoding: 'utf8' });
 
   if (regResult.status !== 0) {
@@ -363,17 +388,19 @@ function ensureProtocolSetup() {
 
   // 6. 清理临时注册脚本
   try {
-    fs.unlinkSync(regScriptWsl);
+    fs.unlinkSync(regScriptFs);
   } catch {}
 
   // 7. 写入 marker
+  //    fsPs1Path/fsVbsPath: 本进程 fs 路径（validateProtocolSetup 用）；
+  //    ps1Path/vbsPath:     Windows 路径（vbsPath 用于注册表校验比较）。
   try {
     fs.writeFileSync(SETUP_MARKER, JSON.stringify({
       ok: true,
       ps1Path: ps1Win,
       vbsPath: vbsWin,
-      wslPs1Path: ps1Wsl,
-      wslVbsPath: vbsWsl,
+      fsPs1Path: ps1Fs,
+      fsVbsPath: vbsFs,
       ts: Date.now()
     }));
   } catch {}

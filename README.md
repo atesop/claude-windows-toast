@@ -50,10 +50,12 @@
 | 依赖 | 版本 | 说明 |
 |------|------|------|
 | [Claude Code](https://claude.ai/code) | 最新版 | CLI 工具 |
-| [Node.js](https://nodejs.org/) | 12+ | Hook 运行环境 |
-| [BurntToast](https://github.com/Windos/BurntToast) | 1.0+ | PowerShell Toast 模块 |
+| [Node.js](https://nodejs.org/) | 12+ | **必须装在 Claude Code 所在系统**：WSL 用户装 WSL 内的 Node，Windows 原生用户装 Windows 版 Node（`node.exe` 在 PATH） |
+| [BurntToast](https://github.com/Windos/BurntToast) | 1.0+ | PowerShell Toast 模块（装在 Windows 侧） |
 | Windows Terminal | 最新版 | 终端（跳转目标） |
-| WSL2 | - | 如在 Linux 环境运行 Claude Code |
+| WSL2 | - | **可选**。仅在 WSL 里跑 Claude Code 时需要 |
+
+> 💡 **两种环境任选其一**：Claude Code 可跑在 **WSL** 里，也可跑在 **Windows 原生**（PowerShell/CMD）。本工具两种都支持，安装时选择对应环境即可。
 
 ### 安装 BurntToast
 
@@ -73,22 +75,46 @@ Install-Module -Name BurntToast -Force -Scope CurrentUser
 git clone https://github.com/atesop/claude-windows-toast.git
 cd claude-windows-toast
 
-# 运行安装脚本
+# 运行安装脚本（会询问 Claude Code 跑在 WSL 还是 Windows 原生）
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
+
+也可用 `-Target` 参数跳过询问（自动化场景）：
+
+```powershell
+# Claude Code 跑在 WSL
+powershell -ExecutionPolicy Bypass -File install.ps1 -Target Wsl
+
+# Claude Code 跑在 Windows 原生
+powershell -ExecutionPolicy Bypass -File install.ps1 -Target Windows
+```
+
+> 安装脚本会按所选环境把 hook 部署到对应位置（WSL 的 `~/.claude/` 或 Windows 的 `%USERPROFILE%\.claude\`），并把绝对路径写进 settings.json。
 
 ### 方式二：手动安装
 
 1. **部署 Hook 脚本**
 
+WSL（bash）：
 ```bash
 mkdir -p ~/.claude/hooks
 cp src/claude-windows-toast.cjs ~/.claude/hooks/
 ```
 
+Windows 原生（PowerShell）：
+```powershell
+$hooksDir = "$env:USERPROFILE\.claude\hooks"
+New-Item -Path $hooksDir -ItemType Directory -Force | Out-Null
+Copy-Item src\claude-windows-toast.cjs $hooksDir -Force
+```
+
 2. **配置 settings.json**
 
-编辑 `~/.claude/settings.json`，添加以下 hooks 配置：
+编辑 settings.json（WSL 的 `~/.claude/settings.json` 或 Windows 的 `%USERPROFILE%\.claude\settings.json`），添加以下 hooks 配置。
+
+> 用 **exec form**（`command` + `args`）+ **绝对路径**，不依赖 `$HOME` 展开，在 WSL（`sh`）与 Windows 原生（Git Bash / PowerShell）下都可靠。把 `<HOOK路径>` 替换为实际绝对路径：
+> - WSL：`/home/<用户名>/.claude/hooks/claude-windows-toast.cjs`
+> - Windows 原生：`C:\\Users\\<用户名>\\.claude\\hooks\\claude-windows-toast.cjs`
 
 ```json
 {
@@ -97,14 +123,8 @@ cp src/claude-windows-toast.cjs ~/.claude/hooks/
       {
         "matcher": "AskUserQuestion",
         "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/claude-windows-toast.cjs\" --mark-ask"
-          },
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/claude-windows-toast.cjs\" --ask"
-          }
+          { "type": "command", "command": "node", "args": ["<HOOK路径>", "--mark-ask"] },
+          { "type": "command", "command": "node", "args": ["<HOOK路径>", "--ask"] }
         ]
       }
     ],
@@ -112,10 +132,7 @@ cp src/claude-windows-toast.cjs ~/.claude/hooks/
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$HOME/.claude/hooks/claude-windows-toast.cjs\" --stop"
-          }
+          { "type": "command", "command": "node", "args": ["<HOOK路径>", "--stop"] }
         ]
       }
     ]
@@ -312,10 +329,12 @@ Get-ItemProperty 'HKCU:\Software\Classes\claudewt\shell\open\command'
 ## 📋 Prerequisites
 
 - [Claude Code](https://claude.ai/code) CLI
-- [Node.js](https://nodejs.org/) 12+
+- [Node.js](https://nodejs.org/) 12+ — must be installed on the same system where Claude Code runs (WSL Node for WSL users; Windows Node for native users)
 - [BurntToast](https://github.com/Windos/BurntToast) PowerShell module
 - Windows Terminal
-- WSL2 (if running Claude Code on Linux)
+- WSL2 (optional; only if running Claude Code inside WSL)
+
+> Supports both **WSL** and **Windows native** (PowerShell/CMD) Claude Code. Pick during install with `-Target Wsl` or `-Target Windows`.
 
 ## 🚀 Installation
 
