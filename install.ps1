@@ -351,7 +351,7 @@ function Add-HookEntry {
 }
 
 # 清旧 + 写新
-Remove-ProjectHooks $settings @('PreToolUse','Stop')
+Remove-ProjectHooks $settings @('PreToolUse','Notification','Stop')
 
 # ⚠️ --ask 必须配在 PreToolUse 而非 PermissionRequest：
 # PermissionRequest 只在"权限对话框即将显示"时触发，bypassPermissions 等模式下永不触发，
@@ -359,6 +359,9 @@ Remove-ProjectHooks $settings @('PreToolUse','Stop')
 Add-HookEntry $settings 'PreToolUse' 'AskUserQuestion' $hookScriptPath '--mark-ask'
 Add-HookEntry $settings 'PreToolUse' 'AskUserQuestion' $hookScriptPath '--ask'
 Add-HookEntry $settings 'Stop' '' $hookScriptPath '--stop'
+
+# Notification(permission_prompt)：命令权限确认框出现时发 🔴 通知（补 AskUserQuestion 未覆盖的权限场景）
+Add-HookEntry $settings 'Notification' 'permission_prompt' $hookScriptPath '--permission'
 
 # 保存
 $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsFile -Encoding UTF8
