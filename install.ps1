@@ -251,29 +251,44 @@ if (-not $settings.hooks) {
     $settings | Add-Member -NotePropertyName 'hooks' -NotePropertyValue ([PSCustomObject]@{}) -Force
 }
 
-# 迁移清理：移除本项目所有旧 hook 条目（含旧的 $HOME shell-form），再统一写 exec form。
-# 这样重装/升级幂等，不留重复或过时条目（command 含 claude-windows-toast 即视为本项目）。
+# 迁移清理：按 hook 粒度移除本项目旧条目（含旧的 $HOME shell-form 与新 exec form），再统一写 exec form。
+# 关键：只剔除本项目 hook，保留同一 entry 内用户的其他 hook；仅当过滤后 hooks 为空才丢弃整个 entry。
+# 与 uninstall.ps1 的逐 hook 过滤逻辑保持一致——避免误删与本项目共存于同一 matcher entry 的用户 hook。
 function Remove-ProjectHooks {
     param([PSObject]$Settings, [string[]]$EventNames)
     foreach ($evt in $EventNames) {
         if (-not $Settings.hooks.$evt) { continue }
-        $filtered = New-Object System.Collections.ArrayList
+        $newEntries = @()
         foreach ($entry in $Settings.hooks.$evt) {
-            $keep = $true
-            foreach ($hook in $entry.hooks) {
-                if ("$($hook.command)" -match 'claude-windows-toast') { $keep = $false; break }
-                if ($hook.args) {
-                    $hit = $false
-                    foreach ($a in $hook.args) { if ("$a" -match 'claude-windows-toast') { $hit = $true; break } }
-                    if ($hit) { $keep = $false; break }
+            $hooks = @($entry.hooks)
+
+            # 逐 hook 判定是否本项目：旧 shell form 的 command 含 marker；
+            # 新 exec form 的 command 是 'node' 但 marker 在 args 里，两者都要识别。
+            $remainingHooks = @()
+            foreach ($h in $hooks) {
+                $isOurs = "$($h.command)" -match 'claude-windows-toast'
+                if (-not $isOurs -and $h.args) {
+                    foreach ($a in $h.args) { if ("$a" -match 'claude-windows-toast') { $isOurs = $true; break } }
                 }
+                if (-not $isOurs) { $remainingHooks += $h }
             }
-            if ($keep) { [void]$filtered.Add($entry) }
+
+            if ($remainingHooks.Count -eq 0) {
+                # 本项目 hook 占满整个 entry：丢弃 entry（不加入 newEntries）
+            } elseif ($remainingHooks.Count -lt $hooks.Count) {
+                # 过滤掉部分：用过滤后的 hooks 重建 entry（直接构造，避免 Copy 浅拷贝引用陷阱）
+                $newEntries += [PSCustomObject]@{ matcher = $entry.matcher; hooks = $remainingHooks }
+            } else {
+                # 未触及本项目：原样保留 entry
+                $newEntries += $entry
+            }
         }
-        if ($filtered.Count -gt 0) {
-            $Settings.hooks.$evt = $filtered.ToArray()
-        } else {
+
+        # 写回事件：entry 全丢则移除事件节点；否则覆盖
+        if ($newEntries.Count -eq 0) {
             $Settings.hooks.PSObject.Properties.Remove($evt)
+        } else {
+            $Settings.hooks.$evt = $newEntries
         }
     }
 }
