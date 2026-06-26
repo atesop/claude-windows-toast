@@ -24,7 +24,7 @@
 
 | 功能 | 描述 |
 |------|------|
-| 🔔 智能通知 | 三种场景：需要输入 / 等待输入 / 任务完成 |
+| 🔔 智能通知 | 四种场景：需要输入 / 权限确认 / 等待输入 / 任务完成 |
 | 🖱️ 点击跳转 | 点击通知按钮直接回到 Windows Terminal |
 | 🔄 自动部署 | 首次运行自动注册协议、部署脚本 |
 | 🛡️ 降级兼容 | 协议注册失败时仍发送基础通知 |
@@ -214,11 +214,12 @@ Win32 API 激活 Windows Terminal 窗口
 
 ## 🧪 测试
 
-### 三种通知的触发方式
+### 四种通知的触发方式
 
 | 通知 | 含义 | 触发方式 | 对应 Hook |
 |------|------|---------|-----------|
 | 🔴 需要你的输入 | Claude **正在问**你 | Claude 调用 `AskUserQuestion` | PreToolUse(AskUserQuestion) → `--ask` |
+| 🔴 需要你的授权 | Claude **等批准命令** | Claude Code 弹出命令权限确认框 | Notification(permission_prompt) → `--permission` |
 | ⏳ 等待输入 | Claude **等你回答** | 上面那次提问所在回合结束 | Stop → `--stop`（读到最近 `askTime`） |
 | ✅ 任务完成 | Claude **干完活了** | 普通回合结束（60s 内无 ask） | Stop → `--stop`（无最近 `askTime`） |
 
@@ -238,7 +239,7 @@ node src/claude-windows-toast.cjs --ask
 
 **正确测法**：让 Claude 真实调用一次 `AskUserQuestion`（例如问一个需要你确认的问题）。此时 PreToolUse 会**同时**跑 `--mark-ask`（写 `askTime`）和 `--ask`（发红色），随后回合结束触发 Stop Hook，读到 `askTime` 就发 ⏳「等待输入」而非绿色 ✅。这样 🔴 → ⏳ 两条通知都能正确送达。
 
-> 💡 一句话区分三种通知：红色 = Claude **正在问**你；⏳ = Claude **等你回答**；✅ = Claude **干完活了**。
+> 💡 一句话区分四种通知：🔴（输入）= Claude **正在问**你；🔴（授权）= Claude **等批准命令**；⏳ = Claude **等你回答**；✅ = Claude **干完活了**。
 
 ---
 
@@ -320,7 +321,7 @@ Get-ItemProperty 'HKCU:\Software\Classes\claudewt\shell\open\command'
 
 | Feature | Description |
 |---------|-------------|
-| 🔔 Smart Notifications | Three scenarios: Input Needed / Waiting / Task Complete |
+| 🔔 Smart Notifications | Four scenarios: Input Needed / Permission Needed / Waiting / Task Complete |
 | 🖱️ Click-to-Navigate | Click notification button to return to Windows Terminal |
 | 🔄 Auto-Deploy | Protocol registration & script deployment on first run |
 | 🛡️ Graceful Fallback | Sends basic notifications if protocol setup fails |

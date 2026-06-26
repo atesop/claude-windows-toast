@@ -6,6 +6,28 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-27
+
+### ✨ 新增
+
+- 🔴 **权限确认通知**：Claude Code 弹出命令权限确认框时发送 Toast 通知（`Notification(permission_prompt)` → `--permission`）。补齐 `AskUserQuestion` 未覆盖的命令授权场景——离开屏幕也能知道 Claude 在等批准。
+
+### 🛠️ 改进
+
+- 🪟 **WSL 注册协议更稳健**：`powershell.exe -File` 改用显式 Windows 路径（`regScriptWin`），不再依赖 WSL 互操作对 `/mnt/c` 的隐式转换。
+- ✅ **WSL 安装预检 node**：`-Target Wsl` 时校验 WSL 内 `node` 可用，避免装完 hook 因 WSL 缺 node 而静默失败。
+- 🧹 **卸载空 APPDATA 防御**：`uninstall.ps1` 在 `%APPDATA%` 缺失时跳过部署文件清理，继续清 hook 脚本与 settings。
+- 🧹 **marker 去冗余**：移除无读取方的 `ps1Path` 字段。
+
+### 🐛 修复
+
+- 🛡️ **install 迁移清理误删用户 hook**：`Remove-ProjectHooks` 改为 hook 级过滤，不再因同 entry 内有本项目 hook 而误删用户的其它 hook。
+
+### 🧪 测试
+
+- ➕ `buildPermissionLines` 单测（含 150 字符边界用例锁定 `truncate` 的 `>` vs `>=`）
+- ➕ `test-install-hooks.ps1`：install 的 `Notification(permission_prompt)` 配置 AST 测试（含混合用户 hook 的迁移保留用例）
+
 ## [1.0.0] - 2026-06-25
 
 首次发布 🎉

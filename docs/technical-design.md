@@ -114,14 +114,15 @@ Software\Classes\claudewt\
 
 ### 3.1 Claude Code Hook 集成
 
-Claude Code Hooks 是一种事件驱动的扩展机制。本 Hook 注册了三个事件：
+Claude Code Hooks 是一种事件驱动的扩展机制。本 Hook 注册了四个事件：
 
 #### 3.1.1 Hook 事件映射
 
 | 事件 | Matcher | 参数 | 功能 |
 |------|---------|------|------|
-| `PermissionRequest` | `AskUserQuestion` | `--ask` | 发送"需要输入"通知 |
-| `PreToolUse` | `AskUserQuestion` | `--mark-ask` | 记录 ask 时间戳 |
+| `PreToolUse` | `AskUserQuestion` | `--ask` | 发送"需要输入"通知（Claude 主动提问） |
+| `PreToolUse` | `AskUserQuestion` | `--mark-ask` | 记录 ask 时间戳（供 Stop 判断场景） |
+| `Notification` | `permission_prompt` | `--permission` | 发送"需要授权"通知（命令权限确认框） |
 | `Stop` | `""`（所有） | `--stop` | 发送"等待输入"或"完成"通知 |
 
 #### 3.1.2 通知场景判断逻辑
