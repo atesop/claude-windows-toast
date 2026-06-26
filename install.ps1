@@ -139,6 +139,21 @@ if ($Target -eq 'Windows') {
     $wslLinuxHome = Get-WslHomeLinuxPath $WslDistro
     if (-not $wslLinuxHome) { Write-Err '无法获取 WSL 的 $HOME 路径'; exit 1 }
     $hookScriptPath = "$wslLinuxHome/.claude/hooks/claude-windows-toast.cjs"
+    # 校验 WSL 内 node 可用：hook 在 WSL 经 sh 执行 node，WSL 必须装 Node.js
+    $wslNode = $null
+    try {
+        if ($WslDistro) {
+            $wslNode = wsl.exe -d $WslDistro -e sh -lc 'command -v node' 2>$null
+        } else {
+            $wslNode = wsl.exe -e sh -lc 'command -v node' 2>$null
+        }
+        if ($LASTEXITCODE -ne 0 -or -not $wslNode) { $wslNode = $null }
+    } catch {}
+    if (-not $wslNode) {
+        Write-Err "未在 WSL 内检测到 node。hook 在 WSL 经 sh 执行，需在 WSL 安装 Node.js: https://nodejs.org/"
+        exit 1
+    }
+    Write-Ok "WSL node: $($wslNode.Trim())"
     Write-Info "WSL 环境: $wslHome"
 }
 

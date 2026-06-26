@@ -40,30 +40,35 @@ if (Test-Path $protoKey) {
 
 Write-Info "删除部署文件..."
 
-# 只删本项目部署的文件，不递归删除整个 claude-code 目录
-# （该目录名较泛，可能被其他 Claude Code 相关工具共用，整体删除有误伤风险）
-$deployDir = Join-Path $env:APPDATA 'claude-code'
-$deployFiles = @('activate-wt.ps1', 'activate-wt.vbs', 'activate-wt-debug.log', 'register-protocol.ps1')
-$deletedAny = $false
-foreach ($f in $deployFiles) {
-    $fp = Join-Path $deployDir $f
-    if (Test-Path $fp) {
-        Remove-Item -Path $fp -Force
-        Write-Ok "已删除: $fp"
-        $deletedAny = $true
+$appData = $env:APPDATA
+if (-not $appData) {
+    Write-Warn "APPDATA 未设置，跳过部署文件清理（继续清理 hook 脚本与 settings）"
+} else {
+    # 只删本项目部署的文件，不递归删除整个 claude-code 目录
+    # （该目录名较泛，可能被其他 Claude Code 相关工具共用，整体删除有误伤风险）
+    $deployDir = Join-Path $appData 'claude-code'
+    $deployFiles = @('activate-wt.ps1', 'activate-wt.vbs', 'activate-wt-debug.log', 'register-protocol.ps1')
+    $deletedAny = $false
+    foreach ($f in $deployFiles) {
+        $fp = Join-Path $deployDir $f
+        if (Test-Path $fp) {
+            Remove-Item -Path $fp -Force
+            Write-Ok "已删除: $fp"
+            $deletedAny = $true
+        }
     }
-}
-# 目录仅当为空时才删除（避免误伤其他工具的文件）
-if (Test-Path $deployDir) {
-    $remaining = @(Get-ChildItem -Path $deployDir -Force -ErrorAction SilentlyContinue)
-    if ($remaining.Count -eq 0) {
-        Remove-Item -Path $deployDir -Force
-        Write-Ok "空目录已删除: $deployDir"
-    } else {
-        Write-Warn "保留目录（含其他文件，未删除）: $deployDir"
+    # 目录仅当为空时才删除（避免误伤其他工具的文件）
+    if (Test-Path $deployDir) {
+        $remaining = @(Get-ChildItem -Path $deployDir -Force -ErrorAction SilentlyContinue)
+        if ($remaining.Count -eq 0) {
+            Remove-Item -Path $deployDir -Force
+            Write-Ok "空目录已删除: $deployDir"
+        } else {
+            Write-Warn "保留目录（含其他文件，未删除）: $deployDir"
+        }
     }
+    if (-not $deletedAny) { Write-Warn "无本项目部署文件，跳过" }
 }
-if (-not $deletedAny) { Write-Warn "无本项目部署文件，跳过" }
 
 # ---- 步骤 3: 移除 Hook 脚本 ----
 

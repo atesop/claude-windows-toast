@@ -354,9 +354,11 @@ function ensureProtocolSetup() {
   }
 
   // 5. 注册协议（使用临时 PS1 文件避免转义问题）
-  //    regScriptFs 在 WSL 下是 /mnt/c/...（WSL 互操作会自动转成 C:\ 传给 powershell.exe）；
-  //    Windows 原生下就是 C:\...，直接执行。两种平台统一 -File regScriptFs 即可。
+  //    regScriptFs: 本进程 fs 写入路径（WSL=/mnt/c/...，原生=C:\...）。
+  //    regScriptWin: 传给 powershell.exe -File 的 Windows 路径（始终 C:\...）。
+  //    不依赖 WSL 互操作对 /mnt/c 的隐式转换——显式传 Windows 路径更稳健。
   const regScriptFs = path.join(dirFs, 'register-protocol.ps1');
+  const regScriptWin = `${appData.win}\\${DEPLOY_DIR_NAME}\\register-protocol.ps1`;
   const regScriptContent = [
     "$k = 'HKCU:\\Software\\Classes\\" + PROTOCOL_NAME + "'",
     "if (-not (Test-Path $k)) {",
@@ -379,7 +381,7 @@ function ensureProtocolSetup() {
 
   const regResult = spawnSync('powershell.exe', [
     '-ExecutionPolicy', 'Bypass', '-NoProfile', '-WindowStyle', 'Hidden',
-    '-File', regScriptFs
+    '-File', regScriptWin
   ], { windowsHide: true, encoding: 'utf8' });
 
   if (regResult.status !== 0) {
@@ -393,12 +395,12 @@ function ensureProtocolSetup() {
   } catch {}
 
   // 7. 写入 marker
-  //    fsPs1Path/fsVbsPath: 本进程 fs 路径（validateProtocolSetup 用）；
-  //    ps1Path/vbsPath:     Windows 路径（vbsPath 用于注册表校验比较）。
+  //    fsPs1Path/fsVbsPath: 本进程 fs 路径（validateProtocolSetup 检查部署文件存在用）。
+  //    vbsPath: Windows 路径（validateProtocolSetup 注册表校验时与注册表值比较）。
+  //    ps1Path 不再写入——无读取方，避免冗余字段（旧 marker 含 ps1Path 仍兼容，因其不参与校验）。
   try {
     fs.writeFileSync(SETUP_MARKER, JSON.stringify({
       ok: true,
-      ps1Path: ps1Win,
       vbsPath: vbsWin,
       fsPs1Path: ps1Fs,
       fsVbsPath: vbsFs,
