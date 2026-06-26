@@ -121,7 +121,8 @@ Claude 弹权限框
 | 场景 | 行为 |
 | --- | --- |
 | stdin 空 / 非 JSON | `_stdinInput` 回退 `{}`，message 行省略，仍发"需要授权"+目录（复用现有 `filter(l=>l)` 空行过滤） |
-| BurntToast 未装 / 协议未注册 | 复用 `sendToast` 现有降级：不带按钮的纯 toast |
+| 协议未注册 | `sendToast` 降级为不带按钮的纯 toast（仍依赖 BurntToast 已装） |
+| BurntToast 未装 | `New-BurntToastNotification` 命令缺失 → 通知发送失败，hook 非阻断退出（exit 0，无 toast）。install 已预检 BurntToast，正常不触达 |
 | node 缺失 | hook 非阻断失败（Notification 不能 block），Claude Code 仅记 hook error，不影响权限框本身 |
 
 ## 8. 测试策略

@@ -135,7 +135,7 @@ module.exports = { resolveSessionId, sanitizeSessionId, buildPermissionLines };
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `node tests/test-permission-lines.cjs`
-Expected: PASS —— `✅ 全部 6 个用例通过`
+Expected: PASS —— `✅ 全部 7 个用例通过`
 
 - [ ] **Step 5: 跑现有测试确认无回归**
 
