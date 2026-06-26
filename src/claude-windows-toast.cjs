@@ -9,6 +9,7 @@
 //   node claude-windows-toast.cjs --ask       # 🔴 需要输入通知(配 PreToolUse:AskUserQuestion)
 //   node claude-windows-toast.cjs --mark-ask  # 标记 ask 时间
 //   node claude-windows-toast.cjs --stop      # Stop 通知
+//   node claude-windows-toast.cjs --permission # 🔴 权限确认通知(配 Notification:permission_prompt)
 // ============================================================================
 
 const { spawnSync } = require('child_process');
@@ -519,6 +520,16 @@ if (process.argv.includes('--ask')) {
     prompt ? `问题: ${prompt}` : '',
     `目录: ${cwd}`
   ]);
+  process.exit(0);
+}
+
+// --permission: Notification(permission_prompt) 权限确认通知（🔴）
+// Claude Code 弹出"命令需要批准"权限框时触发；message 来自 Notification stdin。
+// 仅匹配 permission_prompt（不覆盖 idle_prompt），与现有 PreToolUse(AskUserQuestion) 互不干扰。
+if (process.argv.includes('--permission')) {
+  const message = (_stdinInput && typeof _stdinInput.message === 'string')
+    ? _stdinInput.message : '';
+  sendToast(buildPermissionLines(message, getCwdName()));
   process.exit(0);
 }
 
