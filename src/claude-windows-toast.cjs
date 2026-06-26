@@ -415,6 +415,23 @@ function ensureProtocolSetup() {
 let protocolReady = false;
 
 /**
+ * 构造权限确认通知的文本行（🔴 需要授权）
+ * 用于 Notification(permission_prompt) 事件：Claude Code 弹出命令权限确认框时触发。
+ *
+ * @param {string} message - Notification stdin 的 message 字段（Claude 给的权限原因），可空
+ * @param {string} cwd - 当前目录名（由 getCwdName() 提供）
+ * @returns {string[]} toast 文本行（恒 3 行；message 为空时第 2 行为 ''，由 sendToast 过滤）
+ */
+function buildPermissionLines(message, cwd) {
+  const msg = (typeof message === 'string') ? message.trim() : '';
+  return [
+    '🔴 Claude Code - 需要你的授权',
+    msg ? truncate(msg, 150) : '',
+    `目录: ${cwd}`
+  ];
+}
+
+/**
  * 发送 Windows Toast 通知
  * 如果 claudewt:// 协议注册成功，通知包含"跳转到终端"按钮
  *
@@ -552,4 +569,4 @@ process.exit(0);
 } // end if (require.main === module)
 
 // 导出纯函数供单元测试使用（不含 sendToast 等副作用）
-module.exports = { resolveSessionId, sanitizeSessionId };
+module.exports = { resolveSessionId, sanitizeSessionId, buildPermissionLines };
