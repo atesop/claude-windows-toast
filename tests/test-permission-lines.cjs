@@ -41,6 +41,13 @@ check('超长 message 截断到 150 字符 + ...', () => {
   assert.ok(line.endsWith('...'));
 });
 
+check('正好 150 字符不截断（锁定 truncate 的 > vs >= 边界）', () => {
+  const exact = 'x'.repeat(150);
+  const line = buildPermissionLines(exact, 'p')[1];
+  assert.strictEqual(line.length, 150);
+  assert.strictEqual(line, exact);
+});
+
 check('行数恒为 3', () => {
   assert.strictEqual(buildPermissionLines('m', 'c').length, 3);
   assert.strictEqual(buildPermissionLines('', 'c').length, 3);
