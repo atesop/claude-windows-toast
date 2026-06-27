@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 🐛 修复
+
+- 🖱️ **点击通知无法跳转回终端**：从 `claudewt://` 协议异步拉起的 powershell 缺少 Windows 前台权限，`SetForegroundWindow` 被静默拒绝。改用 `AttachThreadInput` 借用前台窗口权限激活 Windows Terminal；并修正两个隐藏 bug——`ShowWindow(RESTORE)` 顺序错误会搅乱前台检测、误用 `GetWindowThreadProcessId` 的进程 ID 当线程 ID。`try/finally` 保证异常时也分离线程输入。
+
 ## [1.1.0] - 2026-06-27
 
 ### ✨ 新增
