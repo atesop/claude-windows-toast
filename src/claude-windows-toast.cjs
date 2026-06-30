@@ -446,10 +446,54 @@ function ensureProtocolSetup() {
   return true;
 }
 
+// ---- PowerShell 可执行文件探测 ----
+
+/**
+ * 解析用于发送 BurntToast 通知的 PowerShell 可执行文件
+ *
+ * 优先级：环境变量 CLAUDE_WINDOWS_TOAST_PS_EXE > pwsh.exe（若可用） > powershell.exe
+ *
+ * 背景：用户当前终端若是 pwsh.exe (PowerShell 7)，通过 Install-Module 安装的
+ * BurntToast 会进入 PS7 的模块路径（~/Documents/PowerShell/Modules/）。
+ * 若始终硬编码 powershell.exe（Windows PowerShell 5.1），其模块路径为
+ * ~/Documents/WindowsPowerShell/Modules/，找不到 BurntToast，静默失败。
+ * 因此优先使用 pwsh.exe（若可用），让通知在 PS7 环境下正常工作。
+ *
+ * 注：此函数只影响 sendToast（依赖 BurntToast 模块）。
+ *     协议注册/注册表查询等操作继续使用 powershell.exe（无需模块，更稳定）。
+ */
+function resolvePowerShellExe() {
+  // 环境变量手动覆盖（如 'pwsh' 或 'powershell.exe'）
+  if (process.env.CLAUDE_WINDOWS_TOAST_PS_EXE) {
+    const exe = process.env.CLAUDE_WINDOWS_TOAST_PS_EXE.trim();
+    debugLog(`PowerShell exe from env override: ${exe}`);
+    return exe;
+  }
+
+  // 探测 pwsh.exe 是否可用
+  try {
+    const check = spawnSync('pwsh.exe', ['-NoProfile', '-Command', 'exit 0'], {
+      windowsHide: true, encoding: 'utf8', timeout: 5000
+    });
+    if (check.status === 0) {
+      debugLog('pwsh.exe detected, using for BurntToast notifications');
+      return 'pwsh.exe';
+    }
+  } catch {
+    // pwsh.exe 不在 PATH 或无法执行，回退
+  }
+
+  debugLog('pwsh.exe not available, falling back to powershell.exe');
+  return 'powershell.exe';
+}
+
 // ---- Toast 通知 ----
 
 /** 协议就绪状态（首次运行时自动注册）；在 require.main 守卫内赋值，避免被 require 时 spawn powershell */
 let protocolReady = false;
+
+/** 发送 Toast 用的 PowerShell 可执行文件；运行时解析一次 */
+let PS_EXE = 'powershell.exe';
 
 /**
  * 构造权限确认通知的文本行（🔴 需要授权）
@@ -497,7 +541,7 @@ function sendToast(lines) {
     ].join(' ');
   }
 
-  const result = spawnSync('powershell.exe', [
+  const result = spawnSync(PS_EXE, [
     '-ExecutionPolicy', 'Bypass',
     '-NoProfile',
     '-WindowStyle', 'Hidden',
@@ -520,6 +564,9 @@ try {
 } catch (e) {
   debugLog(`Protocol setup error: ${e.message}`);
 }
+
+// 解析用于 BurntToast 通知的 PowerShell 可执行文件（优先 pwsh.exe，确保 PS7 用户通知正常）
+PS_EXE = resolvePowerShellExe();
 
 // 读取 Claude Code 经 stdin 注入的 hook JSON（含稳定 session_id）
 // 仅在非 TTY（管道/重定向，即真实 hook 或 `echo | node` 调试）时读取；
