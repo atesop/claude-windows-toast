@@ -10,6 +10,8 @@
 
 - 🖱️ **点击通知无法跳转回终端**：从 `claudewt://` 协议异步拉起的 powershell 缺少 Windows 前台权限，`SetForegroundWindow` 被静默拒绝。改用 `AttachThreadInput` 借用前台窗口权限激活 Windows Terminal；并修正两个隐藏 bug——`ShowWindow(RESTORE)` 顺序错误会搅乱前台检测、误用 `GetWindowThreadProcessId` 的进程 ID 当线程 ID。`try/finally` 保证异常时也分离线程输入。
 
+- ⚡ **PowerShell 7 下 BurntToast 不可见**：`sendToast` 此前硬编码 `powershell.exe`（Windows PowerShell 5.1），其模块路径（`~/Documents/WindowsPowerShell/Modules/`）无法发现 PS7 用户通过 `Install-Module` 安装到 `~/Documents/PowerShell/Modules/` 的 BurntToast，导致通知静默失败。新增 `resolvePowerShellExe()` 在运行时优先探测 `pwsh.exe` 可用性——可用则用它发通知，不可用则回退 `powershell.exe`。协议注册/注册表查询等非模块操作继续使用 `powershell.exe`（无需模块，更稳定）。也支持 `CLAUDE_WINDOWS_TOAST_PS_EXE` 环境变量手动覆盖。
+
 ## [1.1.0] - 2026-06-27
 
 ### ✨ 新增
